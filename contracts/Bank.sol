@@ -3,15 +3,13 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract Bank is ReentrancyGuard {
     using EnumerableSet for EnumerableSet.AddressSet;
-    using SafeERC20 for IERC20;
 
     /* ========== STATE VARIABLES ========== */
 
-    EnumerableSet.AddressSet public supportTokens;
+    EnumerableSet.AddressSet private supportTokens;
 
     mapping(address => mapping(address => uint)) public balances; // user => token => balances
     mapping(address => mapping(address => uint)) public lastDepositTimestamp; // user => token => timestamp
@@ -37,10 +35,11 @@ contract Bank is ReentrancyGuard {
         uint userAmount = balances[user][token];
         if (userAmount == 0 || lastDepositTimestamp[user][token] == 0) return 0;
 
-        uint daysElapsed = (block.timestamp - lastDepositTimestamp[user][token]) / (24 * 60 * 60);
+        uint daysElapsed = (block.timestamp - lastDepositTimestamp[user][token]) / (60 * 60 * 24);
         if (daysElapsed == 0) return 0;
+        if (daysElapsed > 30) daysElapsed = 30;
 
-        uint total = userAmount * (uint(10002) ** daysElapsed) / (uint(10000) ** daysElapsed);
+        uint total = userAmount * (uint(102) ** daysElapsed) / (uint(100) ** daysElapsed);
 
         return total - userAmount;
     }
@@ -52,28 +51,36 @@ contract Bank is ReentrancyGuard {
 
         if (token == address(0)) {
             amount = msg.value;
+        } else {
+            (bool success, bytes memory data) = address(token).call(abi.encodeWithSelector(0x23b872dd, msg.sender, address(this), amount));
+            require(success && (data.length == 0 || abi.decode(data, (bool))), "Bank: TRANSFER_FROM_FAILED");
         }
 
-        balances[msg.sender][token] = amount;
+        balances[msg.sender][token] += amount;
         lastDepositTimestamp[msg.sender][token] = block.timestamp;
     }
 
-    function withdraw(address token, uint amount) external nonReentrant {
+    function withdraw(address token) external nonReentrant {
         require(supportTokens.contains(token) == true, "Bank: Token is not supported");
         require(balances[msg.sender][token] > 0, "Bank: Amount is not enough.");
 
         uint reward = rewards(msg.sender, token);
 
-        _transferToken(token, msg.sender, balances[msg.sender][token] + reward);
+        _safeTransferToken(token, msg.sender, balances[msg.sender][token] + reward);
+
+        balances[msg.sender][token] = 0;
+        lastDepositTimestamp[msg.sender][token] = 0;
     }
 
     /* ========== PRIVATE FUNCTIONS ========== */
 
-    function _transferToken(address token, address receiver, uint amount) private {
+    function _safeTransferToken(address token, address receiver, uint amount) private {
         if (token == address(0)) {
-            SafeERC20.safeTransferETH(receiver, amount);
+            (bool success, ) = receiver.call{value: amount}(new bytes(0));
+            require(success, "Bank: ETH_TRANSFER_FAILED");
         } else {
-            IERC20(token).safeTransfer(receiver, amount);
+            (bool success, bytes memory data) = address(token).call(abi.encodeWithSelector(0xa9059cbb, receiver, amount));
+            require(success && (data.length == 0 || abi.decode(data, (bool))), "Bank: TRANSFER_FAILED");
         }
     }
 }
