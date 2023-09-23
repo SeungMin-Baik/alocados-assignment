@@ -4,10 +4,8 @@ import {fromUnit, toUnit} from "../utils/formatter";
 import {expect} from "chai";
 import {Contract} from "ethers";
 import {takeSnapshot, revertSnapshot, fastForward} from "../utils/evm";
+import {addressZERO, MAX_UINT} from "../utils/constant";
 
-
-const addressZERO = "0x0000000000000000000000000000000000000000"
-const MAX_UINT = String(ethers.BigNumber.from("2").pow(256).sub(1))
 describe("Bank Unit Test", async () => {
     let deployer: any
     let Bank: Contract, TestToken: Contract
